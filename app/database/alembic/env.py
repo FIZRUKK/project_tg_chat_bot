@@ -15,14 +15,14 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 
-from app.configs import DatabaseConfig
+from app.configs import db_config
 from app.database.base import Base
 from app.database.models import *
 
 
 target_metadata = Base.metadata
 
-config.set_main_option("sqlalchemy.url", DatabaseConfig.url)
+config.set_main_option("sqlalchemy.url", db_config.url.render_as_string(hide_password=False))
 
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
