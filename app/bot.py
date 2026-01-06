@@ -2,6 +2,7 @@ import asyncio
 from aiohttp import web
 from typing import Optional
 from loguru import logger
+from redis.asyncio import Redis
 
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
@@ -11,9 +12,10 @@ from aiogram.webhook.aiohttp_server import (
 from aiogram.client.bot import DefaultBotProperties
 
 from app.routers import all_routers
-from app.configs import tg_bot_config, db_config
+from app.configs import tg_bot_config, db_config, redis_config
 from app.all_middlewares import all_middlewares
 
+from app.middlewares import RedisThrottlingMiddleware
 
 
 class TelegramBotManager:
@@ -22,6 +24,7 @@ class TelegramBotManager:
     _dp: Optional[Dispatcher] = None
     _bot_name: Optional[str] = None
     _app: Optional[web.Application] = None
+    _redis: Optional[Redis] = None
     
     def __new__(cls):
         if cls._instance is None:
@@ -36,15 +39,20 @@ class TelegramBotManager:
         """Инициализация бота и диспетчера"""
         try:
             logger.info("Начинаю инициализацию бота...")
+            self._redis = Redis(
+                host=redis_config.host, 
+                port=redis_config.port, 
+                decode_responses=True
+            )
             
             self._bot = Bot(
                 token=tg_bot_config.BOT_TOKEN,
-                default=DefaultBotProperties(
-                    parse_mode=ParseMode.HTML
-                )
+                default=DefaultBotProperties(parse_mode=ParseMode.HTML)
             )
             
             self._dp = Dispatcher()
+
+            self._dp["redis"] = self._redis
 
             self._setup_middlewares()
             self._dp.include_routers(*all_routers)
@@ -68,6 +76,7 @@ class TelegramBotManager:
     def _setup_middlewares(self):
         """Регистрирует все миддлвари из единого списка"""
         try:
+            self._dp.update.middleware(RedisThrottlingMiddleware(redis=self._redis))
             for middleware in all_middlewares:
                 # Регистрируем каждую миддлварь на уровень update
                 self._dp.update.middleware(middleware)
@@ -164,6 +173,10 @@ class TelegramBotManager:
         logger.info("Запуск процесса остановки Telegram бота...")
         
         if self._bot:
+            if self._redis:
+                await self._redis.close()
+                logger.info("Соединение с Redis закрыто")
+                
             try:
                 # 1. Удаляем webhook (если использовался)
                 await self._bot.delete_webhook()

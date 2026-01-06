@@ -1,0 +1,30 @@
+services:
+  bot:
+    build: .
+    # Будет называться, например, project_tg_chat_bot_main
+    container_name: ${COMPOSE_PROJECT_NAME:-tg_bot}_main
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "${WEBHOOK_PORT}:${WEBHOOK_PORT}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - redis
+    networks:
+      - bot_net
+
+  redis:
+    image: redis:7-alpine
+    # Будет называться, например, project_tg_chat_bot_redis
+    container_name: ${COMPOSE_PROJECT_NAME:-tg_bot}_redis
+    restart: always
+    ports:
+      - "${REDIS_PORT}:6379"
+    networks:
+      - bot_net
+
+networks:
+  bot_net:
+    driver: bridge
